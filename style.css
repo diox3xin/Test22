@@ -19,11 +19,12 @@
   gap: 8px;
   align-items: center;
   margin-top: 6px;
+  flex-wrap: wrap;
 }
 
 #jsi_settings_block input[type="text"]{
   flex: 1;
-  min-width: 240px;
+  min-width: 320px;
   padding: 6px 8px;
   border-radius: 8px;
   border: 1px solid rgba(120,140,200,.25);
@@ -40,7 +41,7 @@
 
 #jsi_settings_block .jsi_status {
   font-size: 11px;
-  opacity: .85;
+  opacity: .9;
   margin-top: 6px;
 }
 
@@ -49,4 +50,14 @@
   gap: 6px;
   align-items: center;
   user-select: none;
+}
+
+#jsi_settings_block .jsi_warn {
+  margin-top: 6px;
+  font-size: 11px;
+  opacity: .85;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(240,190,60,.25);
+  background: rgba(240,190,60,.08);
 }
