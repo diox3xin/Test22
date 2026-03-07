@@ -365,19 +365,30 @@
     };
   }
 
+  // Always read/write directly through ctx().chatMetadata to avoid stale references
   async function getChatState(create = false) {
-    const { chatMetadata, saveMetadata } = ctx();
     const key = chatKey();
-    if (!chatMetadata[key]) {
-      if (create) { chatMetadata[key] = emptyState(); await saveMetadata(); }
-      else return emptyState();
+    // Always get fresh reference
+    if (!ctx().chatMetadata[key]) {
+      if (create) {
+        ctx().chatMetadata[key] = emptyState();
+        await ctx().saveMetadata();
+      } else {
+        return emptyState();
+      }
     }
-    const s = chatMetadata[key];
+    const s = ctx().chatMetadata[key];
     if (!s.addictions) s.addictions = { drugs: 0, alcohol: 0, violence: 0, sex: 0 };
     if (!s.lastUse)    s.lastUse    = {};
     if (!s.txLog)      s.txLog      = [];
+    if (!Array.isArray(s.inventory)) s.inventory = [];
     if (typeof s.balance !== 'number') s.balance = getSettings().startBalance;
     return s;
+  }
+
+  // Save via fresh ctx() to guarantee we save the correct metadata object
+  async function saveState() {
+    await ctx().saveMetadata();
   }
 
   // ── Utils ─────────────────────────────────────────────────────────────────
@@ -429,9 +440,9 @@
     state.txLog.unshift({ ts: Date.now(), type: 'buy', desc: `Куплено: ${item.name} ×${qty}`, amount: -total });
     if (state.txLog.length > 50) state.txLog.length = 50;
 
-    await ctx().saveMetadata();
+    await saveState();
     updateFabBadge(state);
-    renderShopContent();
+    await renderShopContent();
     showToast(`✅ <b>${escHtml(item.name)}</b> ×${qty} за <b>${total} 💰</b>`, 'success');
   }
 
@@ -460,10 +471,10 @@
 
     state.txLog.unshift({ ts: Date.now(), type: 'use', desc: `Применено: ${item.name}`, amount: 0 });
 
-    await ctx().saveMetadata();
+    await saveState();
     updateFabBadge(state);
     await updateAddictionPrompt();
-    renderShopContent();
+    await renderShopContent();
 
     showToast(`${item.icon} <b>${escHtml(item.name)}</b> применён<br><span style="font-size:11px;opacity:.75">Эффект активен до следующего ответа</span>`, 'effect', 5000);
   }
@@ -514,7 +525,7 @@
     const state = await getChatState(true);
     state.balance += s.earnPerMsg;
     state.txLog.unshift({ ts: Date.now(), type: 'earn', desc: 'Монеты за сообщение', amount: s.earnPerMsg });
-    await ctx().saveMetadata();
+    await saveState();
     updateFabBadge(state);
   }
 
@@ -718,7 +729,7 @@
         </div>
         <div class="bms-header-right">
           <div class="bms-balance-pill" id="bms_balance_display">💰 500</div>
-          <button class="bms-modal-close" id="bms_modal_close" title="Закрыть">✕</button>
+          <button type="button" class="bms-modal-close" id="bms_modal_close" title="Закрыть">✕</button>
         </div>
       </div>
 
@@ -924,8 +935,8 @@
         const inv   = state.inventory.find(i => i.id === btn.getAttribute('data-invid'));
         const item  = inv ? ITEMS.find(i => i.id === inv.itemId) : null;
         state.inventory = state.inventory.filter(i => i.id !== btn.getAttribute('data-invid'));
-        await ctx().saveMetadata();
-        renderShopContent();
+        await saveState();
+        await renderShopContent();
         showToast(`🗑 ${item ? escHtml(item.name) : 'Предмет'} выброшен`, 'info');
       });
     });
@@ -991,7 +1002,7 @@
         const type  = btn.getAttribute('data-type');
         const state = await getChatState(true);
         state.addictions[type] = Math.max(0, (state.addictions[type] || 0) - 15);
-        await ctx().saveMetadata();
+        await saveState();
         await updateAddictionPrompt();
         renderShopContent();
         showToast(`📉 ${ADDICTION_DEFS[type]?.name} снижена на 15`, 'info');
@@ -1130,7 +1141,7 @@
       const state = await getChatState(true);
       state.balance += amount;
       state.txLog.unshift({ ts: Date.now(), type: 'add', desc: 'Пополнение баланса', amount });
-      await ctx().saveMetadata();
+      await saveState();
       updateFabBadge(state);
       $('#bms_s_balance').text(Math.floor(state.balance) + ' 💰');
       showToast(`+${amount} 💰 добавлено!`, 'success');
@@ -1148,7 +1159,7 @@
       const state = await getChatState(true);
       state.addictions = { drugs: 0, alcohol: 0, violence: 0, sex: 0 };
       state.lastUse    = {};
-      await ctx().saveMetadata();
+      await saveState();
       await updateAddictionPrompt();
       showToast('🔄 Все зависимости сброшены', 'info');
     });
