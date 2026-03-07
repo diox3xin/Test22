@@ -360,34 +360,35 @@
 
   function ctx() { return SillyTavern.getContext(); }
 
-  // Получаем позицию промпта из контекста ST, с fallback
-  function getPromptPosition(type = 'IN_CHAT') {
+  // IN_PROMPT (0) — добавляет текст в системный промпт. Самый надёжный способ.
+  // IN_CHAT (1) с depth=0 в ST не инжектится, поэтому не используем.
+  function getInPromptPos() {
     const c = ctx();
-    if (c.extension_prompt_types && c.extension_prompt_types[type] !== undefined) {
-      return c.extension_prompt_types[type];
-    }
-    // fallback: IN_PROMPT=0, IN_CHAT=1, BEFORE_PROMPT=2
-    const map = { IN_PROMPT: 0, IN_CHAT: 1, BEFORE_PROMPT: 2 };
-    return map[type] ?? 1;
+    return c.extension_prompt_types?.IN_PROMPT ?? 0;
   }
 
   function setPrompt(key, text) {
     try {
-      const pos = getPromptPosition('IN_CHAT');
-      if (typeof ctx().setExtensionPrompt === 'function') {
-        ctx().setExtensionPrompt(key, text, pos, 0, true);
-        return true;
+      const c = ctx();
+      if (typeof c.setExtensionPrompt !== 'function') {
+        console.warn('[BMS] setExtensionPrompt not found on context');
+        return false;
       }
+      // position=IN_PROMPT(0), depth=0, scan=false
+      c.setExtensionPrompt(key, text, getInPromptPos(), 0);
+      console.log(`[BMS] setPrompt OK — key=${key}, text="${text.slice(0,60)}..."`);
+      return true;
     } catch (e) {
-      console.error('[BMS] setExtensionPrompt error:', e);
+      console.error('[BMS] setPrompt error:', e);
+      return false;
     }
-    return false;
   }
 
   function clearPrompt(key) {
     try {
-      if (typeof ctx().setExtensionPrompt === 'function') {
-        ctx().setExtensionPrompt(key, '', getPromptPosition('IN_CHAT'), 0, false);
+      const c = ctx();
+      if (typeof c.setExtensionPrompt === 'function') {
+        c.setExtensionPrompt(key, '', getInPromptPos(), 0);
       }
     } catch {}
   }
@@ -519,14 +520,10 @@
       effectText = buildUserEffect(item);
     }
 
-    // ── FIX: inject prompt через ST API ─────────────────────────────────────
+    // Инжектируем эффект в системный промпт через ST API
     const ok = setPrompt(EFFECT_TAG, effectText);
-    if (ok) {
-      effectActive = true;
-      console.log('[BMS] Effect injected:', effectText.slice(0, 80));
-    } else {
-      console.warn('[BMS] setExtensionPrompt unavailable');
-    }
+    effectActive = ok; // флаг сброшен в consumeEffect() после ответа бота
+    if (!ok) console.warn('[BMS] setExtensionPrompt unavailable — эффект не инжектирован');
 
     inv.qty -= 1;
     if (inv.qty <= 0) state.inventory = state.inventory.filter(i => i.id !== invId);
