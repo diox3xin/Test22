@@ -1,13 +1,11 @@
 {
   "display_name": "Emotion Canvas",
-  "version": "1.0.0",
-  "js": "index.js",
-  "css": "style.css",
+  "loading_order": 57,
+  "js": ["index.js"],
+  "css": ["style.css"],
   "author": "EmotionCanvas",
-  "description": "Visualizes character emotions with dynamic backgrounds, particles and color themes in real-time.",
-  "requires": [],
-  "optional": [],
-  "tags": ["visual", "atmosphere", "emotions"],
-  "homePage": "",
-  "auto_update": false
+  "version": "1.0.0",
+  "auto_update": false,
+  "homepage": "",
+  "requires": []
 }
