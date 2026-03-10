@@ -1,15 +1,13 @@
 {
-  "display_name": "Чёрный рынок",
-  "loading_order": 57,
-  "js": [
-    "index.js"
-  ],
-  "css": [
-    "style.css"
-  ],
-  "author": "Smokshi",
+  "display_name": "Emotion Canvas",
   "version": "1.0.0",
-  "auto_update": true,
-  "homepage": "https://github.com/smoksshit-cmd/SillyTavern-BlackMarketShop",
-  "requires": []
+  "js": "index.js",
+  "css": "style.css",
+  "author": "EmotionCanvas",
+  "description": "Visualizes character emotions with dynamic backgrounds, particles and color themes in real-time.",
+  "requires": [],
+  "optional": [],
+  "tags": ["visual", "atmosphere", "emotions"],
+  "homePage": "",
+  "auto_update": false
 }
