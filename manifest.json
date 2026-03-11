@@ -1,5 +1,5 @@
 {
-  "display_name": "Трекер памяти фактов",
+  "display_name": "трп",
   "loading_order": 56,
   "js": [
     "index.js"
@@ -10,6 +10,6 @@
   "author": "Smokshi",
   "version": "1.3.0",
   "auto_update": true,
-  "homepage": "https://github.com/smoksshit-cmd/SillyTavern-FactsMemoryTracker",
+  "homepage": "https://github.com/smoksshit-cmd/SillyTavern-FMT",
   "requires": []
 }
