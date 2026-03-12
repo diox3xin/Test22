@@ -61,12 +61,13 @@ const defaultSettings = Object.freeze({
     sendUserAvatar: false,
     sendPreviousImage: false, // Send last generated image as reference for consistency
     userAvatarFile: '', // Selected user avatar filename from /User Avatars/
+    userAvatarName: '', // Name used in prompts for user character matching
     // Style preset - added to every prompt
     defaultStyle: '', // e.g. "semi_realistic, manhwa style, soft lighting"
     // Style reference image (base64) - sent as visual style reference
     styleReferenceImage: '',
     styleReferenceThumb: '', // small thumbnail for UI preview
-    // NPC reference avatars [{name: 'NPC Name', file: 'filename.png', source: 'characters|upload', data: ''}]
+    // NPC reference avatars [{name: 'Luca', charAvatar: 'char.png', uploadData: '', uploadThumb: ''}]
     npcReferences: [],
     // API presets [{name: 'My API', endpoint: '', apiKey: '', model: '', apiType: 'openai'}]
     apiPresets: [],
@@ -451,27 +452,29 @@ async function getUserAvatarBase64() {
 }
 
 /**
- * Get NPC reference avatar as base64
- * @param {object} npcRef - NPC reference object {name, file, source, data}
+ * Get NPC reference avatar as base64 (prefers uploaded image, falls back to char avatar)
+ * @param {object} npcRef - NPC reference object {name, charAvatar, uploadData, uploadThumb}
  */
 async function getNpcAvatarBase64(npcRef) {
     try {
-        if (!npcRef || !npcRef.file) return null;
+        if (!npcRef) return null;
         
-        if (npcRef.source === 'upload' && npcRef.data) {
-            // Uploaded image - data is already base64
+        // Prefer uploaded image
+        if (npcRef.uploadData) {
             console.log(`[IIG] Using uploaded NPC avatar: ${npcRef.name}`);
-            return npcRef.data;
+            return await compressImageForReference(npcRef.uploadData, 1024, 0.8);
         }
         
-        // Character avatar from SillyTavern
-        const avatarUrl = `/characters/${encodeURIComponent(npcRef.file)}`;
-        console.log(`[IIG] Fetching NPC avatar from: ${avatarUrl}`);
-        const base64 = await imageUrlToBase64(avatarUrl);
-        if (base64) {
-            // Compress for reference use
-            return await compressImageForReference(base64, 1024, 0.8);
+        // Fallback to character avatar
+        if (npcRef.charAvatar) {
+            const avatarUrl = `/characters/${encodeURIComponent(npcRef.charAvatar)}`;
+            console.log(`[IIG] Fetching NPC char avatar from: ${avatarUrl}`);
+            const base64 = await imageUrlToBase64(avatarUrl);
+            if (base64) {
+                return await compressImageForReference(base64, 1024, 0.8);
+            }
         }
+        
         return null;
     } catch (error) {
         console.error(`[IIG] Error getting NPC avatar for ${npcRef?.name}:`, error);
@@ -897,13 +900,23 @@ async function generateImageGemini(prompt, style, referenceImages = [], options 
         
         let refInstruction = '[CRITICAL: The reference image(s) above show the EXACT appearance of the character(s). You MUST precisely copy their: face structure, eye color, hair color and style, skin tone, body type, clothing, and all distinctive features. Do not deviate from the reference appearances.]';
         
+        // User avatar name mapping
+        if (settings.sendUserAvatar && settings.userAvatarName) {
+            refInstruction += `\n[USER CHARACTER: The character "${settings.userAvatarName}" corresponds to the user avatar reference. Use that reference for this character's appearance.]`;
+        }
+        
         if (hasStyleRef) {
             refInstruction += '\n[STYLE REFERENCE: One of the reference images above defines the TARGET ART STYLE. You MUST match its art style, color palette, rendering technique, line work, shading method, and overall aesthetic. Generate the new image in the exact same visual style.]';
         }
         
         if (hasNpcRefs) {
-            const npcNames = settings.npcReferences.filter(n => n.file || n.data).map(n => n.name).join(', ');
-            refInstruction += `\n[NPC REFERENCES: Reference images include NPC characters: ${npcNames}. If these characters appear in the scene, use their exact appearance from the references.]`;
+            const promptLower = prompt.toLowerCase();
+            const matchedNpcs = settings.npcReferences
+                .filter(n => n.name && (n.charAvatar || n.uploadData) && promptLower.includes(n.name.toLowerCase()))
+                .map(n => n.name);
+            if (matchedNpcs.length > 0) {
+                refInstruction += `\n[NPC REFERENCES: Reference images include NPC characters: ${matchedNpcs.join(', ')}. Use their exact appearance from the references.]`;
+            }
         }
         
         fullPrompt = `${refInstruction}\n\n${fullPrompt}`;
@@ -1046,15 +1059,22 @@ async function generateImageWithRetry(prompt, style, onStatusUpdate, options = {
         }
     }
     
-    // NPC reference avatars
+    // NPC reference avatars - only send if NPC name appears in the prompt
     if (settings.npcReferences && settings.npcReferences.length > 0) {
+        const promptLower = prompt.toLowerCase();
         for (const npcRef of settings.npcReferences) {
-            if (!npcRef.file && !npcRef.data) continue;
-            console.log(`[IIG] Fetching NPC avatar: ${npcRef.name}...`);
-            const npcAvatar = await getNpcAvatarBase64(npcRef);
-            if (npcAvatar) {
-                referenceImages.push(npcAvatar);
-                console.log(`[IIG] NPC avatar "${npcRef.name}" added to references`);
+            if (!npcRef.name || (!npcRef.charAvatar && !npcRef.uploadData)) continue;
+            
+            // Check if NPC name appears in the generation prompt
+            if (promptLower.includes(npcRef.name.toLowerCase())) {
+                console.log(`[IIG] NPC "${npcRef.name}" found in prompt, adding reference...`);
+                const npcAvatar = await getNpcAvatarBase64(npcRef);
+                if (npcAvatar) {
+                    referenceImages.push(npcAvatar);
+                    console.log(`[IIG] NPC avatar "${npcRef.name}" added to references`);
+                }
+            } else {
+                console.log(`[IIG] NPC "${npcRef.name}" not found in prompt, skipping`);
             }
         }
     }
@@ -2040,18 +2060,26 @@ function createSettingsUI() {
                     </label>
                     
                     <!-- User Avatar Selection -->
-                    <div id="iig_user_avatar_row" class="flex-row ${!settings.sendUserAvatar ? 'hidden' : ''}" style="margin-top: 5px;">
-                        <label for="iig_user_avatar_file">Аватар {{user}}</label>
-                        <select id="iig_user_avatar_file" class="flex1">
-                            <option value="">-- Не выбран --</option>
-                            ${settings.userAvatarFile ? `<option value="${settings.userAvatarFile}" selected>${settings.userAvatarFile}</option>` : ''}
-                        </select>
-                        <div id="iig_refresh_avatars" class="menu_button iig-refresh-btn" title="Обновить список">
-                            <i class="fa-solid fa-sync"></i>
+                    <div id="iig_user_avatar_row" class="${!settings.sendUserAvatar ? 'hidden' : ''}" style="margin-top: 5px;">
+                        <div class="flex-row">
+                            <label for="iig_user_avatar_file">Файл аватара</label>
+                            <div id="iig_user_avatar_preview_inline" class="iig-avatar-thumb-inline">
+                                ${settings.userAvatarFile ? `<img src="/User Avatars/${encodeURIComponent(settings.userAvatarFile)}" alt="avatar">` : '<i class="fa-solid fa-user"></i>'}
+                            </div>
+                            <select id="iig_user_avatar_file" class="flex1">
+                                <option value="">-- Не выбран --</option>
+                                ${settings.userAvatarFile ? `<option value="${settings.userAvatarFile}" selected>${settings.userAvatarFile}</option>` : ''}
+                            </select>
+                            <div id="iig_refresh_avatars" class="menu_button iig-refresh-btn" title="Обновить список">
+                                <i class="fa-solid fa-sync"></i>
+                            </div>
                         </div>
-                    </div>
-                    <div id="iig_user_avatar_preview" class="iig-avatar-preview ${!settings.userAvatarFile ? 'hidden' : ''}">
-                        ${settings.userAvatarFile ? `<img src="/User Avatars/${encodeURIComponent(settings.userAvatarFile)}" alt="user avatar">` : ''}
+                        <div class="flex-row" style="margin-top:5px;">
+                            <label for="iig_user_avatar_name">Имя в промптах</label>
+                            <input type="text" id="iig_user_avatar_name" class="text_pole flex1" 
+                                   value="${settings.userAvatarName || ''}" placeholder="Mira">
+                        </div>
+                        <p class="hint">Имя вашего персонажа как оно появляется в промптах генерации (для правильного сопоставления референса).</p>
                     </div>
                     
                     <label class="checkbox_label">
@@ -2063,32 +2091,16 @@ function createSettingsUI() {
                     <hr>
                     
                     <!-- NPC References -->
-                    <h5>НПС референсы</h5>
-                    <p class="hint">Добавьте аватарки НПС для консистентности второстепенных персонажей.</p>
-                    <div id="iig_npc_list" class="iig-npc-list">
-                        ${(settings.npcReferences || []).map((npc, i) => `
-                            <div class="iig-npc-entry" data-index="${i}">
-                                <div class="flex-row" style="gap:5px;">
-                                    <input type="text" class="text_pole iig-npc-name" value="${npc.name || ''}" placeholder="Имя НПС" style="width:120px;">
-                                    <select class="iig-npc-source" style="width:100px;">
-                                        <option value="characters" ${npc.source !== 'upload' ? 'selected' : ''}>Персонаж</option>
-                                        <option value="upload" ${npc.source === 'upload' ? 'selected' : ''}>Файл</option>
-                                    </select>
-                                    <select class="iig-npc-char-file flex1 ${npc.source === 'upload' ? 'hidden' : ''}" style="min-width:0;">
-                                        <option value="${npc.file || ''}" selected>${npc.file || '-- Выберите --'}</option>
-                                    </select>
-                                    <input type="file" class="iig-npc-file-upload ${npc.source !== 'upload' ? 'hidden' : ''}" accept="image/*" style="flex:1; font-size:0.8em;">
-                                    <div class="menu_button iig-npc-remove" title="Удалить"><i class="fa-solid fa-xmark"></i></div>
-                                </div>
-                                <div class="iig-avatar-preview iig-npc-preview ${!npc.file && !npc.data ? 'hidden' : ''}">
-                                    ${npc.source === 'upload' && npc.thumb ? `<img src="data:image/jpeg;base64,${npc.thumb}" alt="${npc.name}">` : 
-                                      npc.file && npc.source !== 'upload' ? `<img src="/characters/${encodeURIComponent(npc.file)}" alt="${npc.name}">` : ''}
-                                </div>
-                            </div>
-                        `).join('')}
-                    </div>
-                    <div id="iig_add_npc" class="menu_button" style="width:100%; margin-top:5px;">
-                        <i class="fa-solid fa-plus"></i> Добавить НПС
+                    <h5>NPC-референсы</h5>
+                    <p class="hint">Добавьте NPC с именами и картинками. Референс отправляется автоматически, если имя NPC встречается в промпте генерации.</p>
+                    
+                    <div id="iig_npc_list" class="iig-npc-list"></div>
+                    
+                    <div class="iig-npc-add-row">
+                        <input type="text" id="iig_npc_name_input" class="text_pole" placeholder="Имя NPC (напр. Luca)" style="flex:1;">
+                        <div id="iig_add_npc" class="menu_button">
+                            <i class="fa-solid fa-plus"></i> +Добавить
+                        </div>
                     </div>
                     
                     <hr>
@@ -2167,46 +2179,50 @@ function createSettingsUI() {
 }
 
 /**
- * Rebuild NPC references list UI
+ * Rebuild NPC references list UI (screenshot 2 style)
  */
-async function rebuildNpcList() {
+function rebuildNpcList() {
     const settings = getSettings();
     const container = document.getElementById('iig_npc_list');
     if (!container) return;
-    
-    // Fetch characters for dropdown
-    const characters = await fetchAllCharacters();
     
     container.innerHTML = '';
     
     for (let i = 0; i < settings.npcReferences.length; i++) {
         const npc = settings.npcReferences[i];
-        const isUpload = npc.source === 'upload';
         
-        const charOptions = characters.map(c => 
-            `<option value="${c.avatar}" ${c.avatar === npc.file && !isUpload ? 'selected' : ''}>${c.name}</option>`
-        ).join('');
+        // Character avatar thumb src
+        const charThumbSrc = npc.charAvatar 
+            ? `/characters/${encodeURIComponent(npc.charAvatar)}` 
+            : '';
+        
+        // Upload thumb src
+        const uploadThumbSrc = npc.uploadThumb 
+            ? `data:image/jpeg;base64,${npc.uploadThumb}` 
+            : '';
         
         const entry = document.createElement('div');
         entry.className = 'iig-npc-entry';
         entry.dataset.index = i;
         entry.innerHTML = `
-            <div class="flex-row" style="gap:5px;">
-                <input type="text" class="text_pole iig-npc-name" value="${npc.name || ''}" placeholder="Имя НПС" style="width:120px;">
-                <select class="iig-npc-source" style="width:100px;">
-                    <option value="characters" ${!isUpload ? 'selected' : ''}>Персонаж</option>
-                    <option value="upload" ${isUpload ? 'selected' : ''}>Файл</option>
-                </select>
-                <select class="iig-npc-char-file flex1 ${isUpload ? 'hidden' : ''}" style="min-width:0;">
-                    <option value="">-- Выберите --</option>
-                    ${charOptions}
-                </select>
-                <input type="file" class="iig-npc-file-upload ${!isUpload ? 'hidden' : ''}" accept="image/*" style="flex:1; font-size:0.8em;">
-                <div class="menu_button iig-npc-remove" title="Удалить"><i class="fa-solid fa-xmark"></i></div>
+            <div class="iig-npc-thumb iig-npc-char-thumb" title="Аватар персонажа">
+                ${charThumbSrc ? `<img src="${charThumbSrc}" alt="${npc.name}">` : '<i class="fa-solid fa-image-portrait"></i>'}
             </div>
-            <div class="iig-avatar-preview iig-npc-preview ${!npc.file && !npc.data ? 'hidden' : ''}">
-                ${isUpload && npc.thumb ? `<img src="data:image/jpeg;base64,${npc.thumb}" alt="${npc.name}">` :
-                  npc.file && !isUpload ? `<img src="/characters/${encodeURIComponent(npc.file)}" alt="${npc.name}">` : ''}
+            <div class="iig-npc-thumb iig-npc-upload-thumb" title="Загруженный референс">
+                ${uploadThumbSrc ? `<img src="${uploadThumbSrc}" alt="${npc.name}">` : '<i class="fa-solid fa-user"></i>'}
+            </div>
+            <span class="iig-npc-label">${npc.name || 'Без имени'}</span>
+            <div class="iig-npc-actions">
+                <label class="menu_button iig-npc-upload-btn" title="Загрузить картинку">
+                    <i class="fa-solid fa-upload"></i>
+                    <input type="file" class="iig-npc-file-input" accept="image/*" style="display:none;">
+                </label>
+                <div class="menu_button iig-npc-pick-char" title="Выбрать персонажа">
+                    <i class="fa-solid fa-image-portrait"></i>
+                </div>
+                <div class="menu_button iig-npc-remove" title="Удалить">
+                    <i class="fa-solid fa-trash"></i>
+                </div>
             </div>
         `;
         container.appendChild(entry);
@@ -2353,21 +2369,25 @@ function bindSettingsEvents() {
         }
     });
     
-    // User avatar file selection - with preview
+    // User avatar file selection - with inline preview
     document.getElementById('iig_user_avatar_file')?.addEventListener('change', (e) => {
         settings.userAvatarFile = e.target.value;
         saveSettings();
         
-        const preview = document.getElementById('iig_user_avatar_preview');
+        const preview = document.getElementById('iig_user_avatar_preview_inline');
         if (preview) {
             if (e.target.value) {
-                preview.innerHTML = `<img src="/User Avatars/${encodeURIComponent(e.target.value)}" alt="user avatar">`;
-                preview.classList.remove('hidden');
+                preview.innerHTML = `<img src="/User Avatars/${encodeURIComponent(e.target.value)}" alt="avatar">`;
             } else {
-                preview.innerHTML = '';
-                preview.classList.add('hidden');
+                preview.innerHTML = '<i class="fa-solid fa-user"></i>';
             }
         }
+    });
+    
+    // User avatar name in prompts
+    document.getElementById('iig_user_avatar_name')?.addEventListener('input', (e) => {
+        settings.userAvatarName = e.target.value;
+        saveSettings();
     });
     
     // Send previous image
@@ -2477,85 +2497,94 @@ function bindSettingsEvents() {
     
     // === NPC REFERENCES ===
     document.getElementById('iig_add_npc')?.addEventListener('click', () => {
-        settings.npcReferences.push({ name: '', file: '', source: 'characters', data: '', thumb: '' });
+        const nameInput = document.getElementById('iig_npc_name_input');
+        const name = nameInput?.value?.trim();
+        if (!name) {
+            toastr.warning('Введите имя NPC', 'Генерация картинок');
+            nameInput?.focus();
+            return;
+        }
+        settings.npcReferences.push({ name: name, charAvatar: '', uploadData: '', uploadThumb: '' });
         saveSettings();
+        if (nameInput) nameInput.value = '';
         rebuildNpcList();
     });
     
-    document.getElementById('iig_npc_list')?.addEventListener('click', (e) => {
-        const removeBtn = e.target.closest('.iig-npc-remove');
-        if (removeBtn) {
-            const entry = removeBtn.closest('.iig-npc-entry');
-            const idx = parseInt(entry?.dataset.index);
-            if (!isNaN(idx)) {
-                settings.npcReferences.splice(idx, 1);
-                saveSettings();
-                rebuildNpcList();
-            }
+    // Allow Enter in NPC name input
+    document.getElementById('iig_npc_name_input')?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            document.getElementById('iig_add_npc')?.click();
         }
     });
     
-    document.getElementById('iig_npc_list')?.addEventListener('change', async (e) => {
+    // Delegate NPC list events
+    document.getElementById('iig_npc_list')?.addEventListener('click', async (e) => {
         const entry = e.target.closest('.iig-npc-entry');
         if (!entry) return;
         const idx = parseInt(entry.dataset.index);
         if (isNaN(idx) || !settings.npcReferences[idx]) return;
-        
         const npc = settings.npcReferences[idx];
         
-        if (e.target.classList.contains('iig-npc-source')) {
-            npc.source = e.target.value;
-            npc.file = '';
-            npc.data = '';
-            npc.thumb = '';
+        // Remove button
+        if (e.target.closest('.iig-npc-remove')) {
+            settings.npcReferences.splice(idx, 1);
             saveSettings();
             rebuildNpcList();
+            return;
         }
         
-        if (e.target.classList.contains('iig-npc-char-file')) {
-            npc.file = e.target.value;
-            npc.source = 'characters';
-            saveSettings();
-            const preview = entry.querySelector('.iig-npc-preview');
-            if (preview && e.target.value) {
-                preview.innerHTML = `<img src="/characters/${encodeURIComponent(e.target.value)}" alt="${npc.name}">`;
-                preview.classList.remove('hidden');
+        // Pick character avatar button
+        if (e.target.closest('.iig-npc-pick-char')) {
+            const characters = await fetchAllCharacters();
+            if (characters.length === 0) {
+                toastr.warning('Персонажи не найдены', 'Генерация картинок');
+                return;
             }
-        }
-        
-        if (e.target.classList.contains('iig-npc-file-upload')) {
-            const file = e.target.files?.[0];
-            if (file) {
-                try {
-                    const base64 = await fileToBase64(file);
-                    const thumb = await createThumbnail(base64, 80);
-                    npc.data = base64;
-                    npc.file = file.name;
-                    npc.source = 'upload';
-                    npc.thumb = thumb;
+            
+            // Build simple selection dialog
+            const charNames = characters.map(c => c.name);
+            const selected = prompt(`Выберите персонажа для "${npc.name}":\n\n${charNames.map((n, i) => `${i + 1}. ${n}`).join('\n')}\n\nВведите номер:`);
+            if (selected) {
+                const charIdx = parseInt(selected) - 1;
+                if (charIdx >= 0 && charIdx < characters.length) {
+                    npc.charAvatar = characters[charIdx].avatar;
                     saveSettings();
-                    const preview = entry.querySelector('.iig-npc-preview');
-                    if (preview) {
-                        preview.innerHTML = `<img src="data:image/jpeg;base64,${thumb}" alt="${npc.name}">`;
-                        preview.classList.remove('hidden');
-                    }
-                } catch (err) {
-                    toastr.error('Ошибка: ' + err.message, 'Генерация картинок');
+                    rebuildNpcList();
+                    toastr.success(`Аватар "${characters[charIdx].name}" назначен для ${npc.name}`, 'Генерация картинок');
                 }
             }
+            return;
         }
     });
     
-    document.getElementById('iig_npc_list')?.addEventListener('input', (e) => {
-        if (e.target.classList.contains('iig-npc-name')) {
-            const entry = e.target.closest('.iig-npc-entry');
-            const idx = parseInt(entry?.dataset.index);
-            if (!isNaN(idx) && settings.npcReferences[idx]) {
-                settings.npcReferences[idx].name = e.target.value;
-                saveSettings();
-            }
+    // Upload handler for NPC file input
+    document.getElementById('iig_npc_list')?.addEventListener('change', async (e) => {
+        if (!e.target.classList.contains('iig-npc-file-input')) return;
+        const entry = e.target.closest('.iig-npc-entry');
+        if (!entry) return;
+        const idx = parseInt(entry.dataset.index);
+        if (isNaN(idx) || !settings.npcReferences[idx]) return;
+        const npc = settings.npcReferences[idx];
+        
+        const file = e.target.files?.[0];
+        if (!file) return;
+        
+        try {
+            const base64 = await fileToBase64(file);
+            const thumb = await createThumbnail(base64, 80);
+            npc.uploadData = base64;
+            npc.uploadThumb = thumb;
+            saveSettings();
+            rebuildNpcList();
+            toastr.success(`Референс загружен для ${npc.name}`, 'Генерация картинок');
+        } catch (err) {
+            toastr.error('Ошибка загрузки: ' + err.message, 'Генерация картинок');
         }
     });
+    
+    // Initial NPC list render
+    rebuildNpcList();
     
     // Max retries
     document.getElementById('iig_max_retries')?.addEventListener('input', (e) => {
