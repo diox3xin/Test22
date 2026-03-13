@@ -38,7 +38,7 @@
     margin-top: 2px;
 }
 
-/* Avatar options section - shown only for nano-banana */
+/* Avatar options section */
 .iig-avatar-section {
     padding: 10px;
     background: var(--SmartThemeBlurTintColor);
@@ -50,7 +50,7 @@
     display: none;
 }
 
-/* Loading Placeholder - adaptive to container */
+/* Loading Placeholder */
 .iig-loading-placeholder {
     display: inline-flex;
     flex-direction: column;
@@ -87,7 +87,7 @@
     to { transform: rotate(360deg); }
 }
 
-/* Error Wrapper - contains img with preserved data-iig-instruction for DOM search */
+/* Error Wrapper */
 .iig-error-wrapper {
     display: inline-block;
     position: relative;
@@ -113,54 +113,7 @@
     height: auto;
 }
 
-/* Legacy error placeholder (keeping for backwards compatibility) */
-.iig-error-placeholder {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    min-height: 150px;
-    min-width: 200px;
-    max-width: 400px;
-    background: rgba(255, 100, 100, 0.1);
-    border-radius: 10px;
-    padding: 20px;
-    margin: 10px 0;
-    border: 2px dashed rgba(255, 100, 100, 0.5);
-}
-
-.iig-error-placeholder .iig-error-icon {
-    font-size: 2em;
-    margin-bottom: 10px;
-}
-
-.iig-error-placeholder .iig-error-text {
-    font-size: 0.85em;
-    color: var(--SmartThemeQuoteColor);
-    text-align: center;
-    margin-bottom: 10px;
-    max-width: 300px;
-    word-break: break-word;
-}
-
-.iig-error-placeholder .iig-retry-btn {
-    padding: 8px 16px;
-    background: var(--SmartThemeBodyColor);
-    color: var(--SmartThemeBlurTintColor);
-    border: none;
-    border-radius: 5px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    transition: opacity 0.2s;
-}
-
-.iig-error-placeholder .iig-retry-btn:hover {
-    opacity: 0.8;
-}
-
-/* Generated Image Container */
+/* Generated Image */
 .iig-generated-image {
     max-width: 100%;
     border-radius: 8px;
@@ -183,12 +136,12 @@
     cursor: pointer;
 }
 
-/* Regenerate button in message extra menu - inherits mes_button styling */
-
-/* Inline avatar thumb (next to dropdown) */
+/* Inline avatar thumb (next to checkbox/dropdown) */
 .iig-avatar-thumb-inline {
     width: 36px;
     height: 36px;
+    min-width: 36px;
+    min-height: 36px;
     border-radius: 6px;
     border: 1px solid var(--SmartThemeBorderColor);
     overflow: hidden;
@@ -203,6 +156,7 @@
     width: 100%;
     height: 100%;
     object-fit: cover;
+    display: block;
 }
 
 .iig-avatar-thumb-inline i {
@@ -210,7 +164,7 @@
     opacity: 0.4;
 }
 
-/* Avatar Preview (legacy - style ref) */
+/* Avatar Preview (style ref) */
 .iig-avatar-preview {
     margin: 4px 0;
 }
@@ -234,7 +188,7 @@
     gap: 4px;
 }
 
-/* NPC Entry Row (screenshot 2 style) */
+/* NPC Entry Row */
 .iig-npc-entry {
     display: flex;
     align-items: center;
@@ -244,12 +198,15 @@
     border-radius: 8px;
     border: 1px solid var(--SmartThemeBorderColor);
     min-height: 44px;
+    transition: opacity 0.2s;
 }
 
 /* NPC Thumbnail */
 .iig-npc-thumb {
     width: 36px;
     height: 36px;
+    min-width: 36px;
+    min-height: 36px;
     border-radius: 6px;
     border: 1px solid var(--SmartThemeBorderColor);
     overflow: hidden;
@@ -264,6 +221,7 @@
     width: 100%;
     height: 100%;
     object-fit: cover;
+    display: block;
 }
 
 .iig-npc-thumb i {
@@ -279,6 +237,13 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+/* NPC Status indicator */
+.iig-npc-status {
+    flex-shrink: 0;
+    font-weight: bold;
+    letter-spacing: 0.5px;
 }
 
 /* NPC Action Buttons */
@@ -302,19 +267,15 @@
     color: rgba(255, 100, 100, 1);
 }
 
+/* NPC Toggle button - larger hit area */
 .iig-npc-toggle {
     transition: color 0.2s;
+    font-size: 1.1em !important;
+    padding: 4px 6px !important;
 }
 
 .iig-npc-toggle:hover {
     opacity: 0.8;
-}
-
-/* Char avatar preview row */
-.iig-char-avatar-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
 }
 
 /* NPC Add Row */
@@ -339,5 +300,10 @@
 
 /* Hidden utility */
 .hidden {
+    display: none !important;
+}
+
+/* Gemini section */
+.iig-gemini-section.hidden {
     display: none !important;
 }
