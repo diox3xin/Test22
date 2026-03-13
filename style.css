@@ -302,6 +302,21 @@
     color: rgba(255, 100, 100, 1);
 }
 
+.iig-npc-toggle {
+    transition: color 0.2s;
+}
+
+.iig-npc-toggle:hover {
+    opacity: 0.8;
+}
+
+/* Char avatar preview row */
+.iig-char-avatar-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
 /* NPC Add Row */
 .iig-npc-add-row {
     display: flex;
